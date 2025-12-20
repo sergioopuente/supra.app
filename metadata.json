@@ -1,0 +1,7 @@
+{
+  "name": "supra",
+  "description": "A high-performance mental well-being app for Gen Z, focusing on emotional check-ins, stoic principles, and atomic habits with a minimalist premium aesthetic.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
