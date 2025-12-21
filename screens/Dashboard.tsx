@@ -234,7 +234,8 @@ const Dashboard: React.FC = () => {
         {/* BLOQUE 3.1: MEDITACIÓN (Siempre visible como base científica) */}
         <section className="mb-4">
             <div className="liquid-glass rounded-[2rem] p-1 overflow-hidden relative group">
-                <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 via-transparent to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+                {/* Continuous Moving Background Gradient - Cyan Theme */}
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-blue-600/20 to-cyan-500/20 animate-gradient-x pointer-events-none" />
                 
                 <div className="p-6 relative z-10">
                     <div className="flex items-center gap-2 mb-4">
@@ -265,8 +266,9 @@ const Dashboard: React.FC = () => {
         {/* BLOQUE 3.2: ORACIÓN (Solo Modo Lux - Visible debajo de la meditación) */}
         {isSpiritual && (
             <section className="mb-6 animate-in slide-in-from-bottom-8 duration-500 delay-100">
-                <div className="relative rounded-[2rem] p-1 overflow-hidden group border border-amber-500/20 bg-amber-900/10 backdrop-blur-md">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-amber-600/20 via-transparent to-purple-600/10 pointer-events-none" />
+                <div className="liquid-glass rounded-[2rem] p-1 overflow-hidden relative group">
+                    {/* Continuous Moving Background Gradient - Amber Theme */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-600/20 via-purple-600/20 to-amber-600/20 animate-gradient-x pointer-events-none" />
                     
                     <div className="p-6 relative z-10">
                         <div className="flex items-center justify-between mb-4">
@@ -300,12 +302,25 @@ const Dashboard: React.FC = () => {
             </section>
         )}
 
-        {/* BLOQUE 4: FRASE DEL DÍA */}
+        {/* BLOQUE 4: FRASE DEL DÍA (Ahora con fondo animado continuo) */}
         <section className="mb-6 animate-in slide-in-from-bottom-8 duration-700 delay-200">
-             <div className="relative rounded-[2rem] p-6 border border-white/10 bg-gradient-to-br from-neutral-900/80 via-black/80 to-neutral-900/80 backdrop-blur-xl overflow-hidden shadow-2xl min-h-[140px] flex items-center justify-center">
-                <div className={`absolute -top-10 -left-10 size-40 rounded-full blur-[50px] pointer-events-none ${isSpiritual ? 'bg-amber-500/20' : 'bg-blue-900/30'}`} />
+             <div className="liquid-glass rounded-[2rem] p-1 overflow-hidden shadow-2xl group relative">
                 
-                <div className="relative z-10 flex flex-col items-center text-center space-y-4 w-full">
+                {/* Continuous Moving Background Gradient */}
+                <div className={`absolute inset-0 animate-gradient-x pointer-events-none opacity-30 ${
+                    isSpiritual 
+                    ? 'bg-gradient-to-r from-amber-800/40 via-purple-900/40 to-amber-800/40' 
+                    : 'bg-gradient-to-r from-indigo-900/40 via-neutral-900/40 to-indigo-900/40'
+                }`} />
+                
+                {/* Dark Overlay for Readability */}
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
+
+                {/* Decorative Blur Spot */}
+                <div className={`absolute -top-10 -left-10 size-40 rounded-full blur-[50px] pointer-events-none ${isSpiritual ? 'bg-amber-500/20' : 'bg-blue-900/30'}`} />
+
+                <div className="relative z-10 p-6 min-h-[140px] flex flex-col items-center justify-center text-center space-y-4 w-full">
+                    {/* Header */}
                     <div className="flex items-center gap-2 opacity-60">
                          <span className="h-px w-8 bg-gradient-to-r from-transparent to-white/50" />
                          <span className="text-[9px] font-bold text-white uppercase tracking-[0.3em]">
@@ -314,6 +329,7 @@ const Dashboard: React.FC = () => {
                          <span className="h-px w-8 bg-gradient-to-l from-transparent to-white/50" />
                     </div>
                     
+                    {/* Content */}
                     <div className={`transition-opacity duration-700 flex flex-col items-center gap-3 w-full ${loadingQuote ? 'opacity-0' : 'opacity-100'}`}>
                         {quote ? (
                             <>

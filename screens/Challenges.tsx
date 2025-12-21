@@ -18,7 +18,15 @@ const Challenges: React.FC = () => {
     { id: 3, title: 'ducha fría', time: '2 min', done: false }
   ]);
 
+  // Función para vibración sutil (Feedback Háptico)
+  const triggerHaptic = () => {
+    if (navigator.vibrate) {
+        navigator.vibrate(15); // 15ms es un "tick" sutil, similar al Taptic Engine
+    }
+  };
+
   const toggleMain = () => {
+    triggerHaptic();
     setActiveChallenge(prev => ({
         ...prev,
         completedToday: !prev.completedToday,
@@ -27,6 +35,7 @@ const Challenges: React.FC = () => {
   };
 
   const toggleSecondary = (id: number) => {
+    triggerHaptic();
     setSecondaryChallenges(prev => prev.map(c => 
         c.id === id ? { ...c, done: !c.done } : c
     ));
@@ -83,81 +92,61 @@ const Challenges: React.FC = () => {
                                 {Array.from({ length: activeChallenge.daysTotal }).map((_, i) => (
                                     <div 
                                         key={i} 
-                                        className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${
-                                            i < activeChallenge.daysDone 
-                                                ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]' 
-                                                : 'bg-white/10'
-                                        }`} 
+                                        className={`h-1.5 flex-1 rounded-full ${i < activeChallenge.daysDone ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-white/10'}`} 
                                     />
                                 ))}
                             </div>
 
                             <button 
                                 onClick={toggleMain}
-                                className={`w-full h-14 rounded-2xl font-bold text-sm tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${
-                                    activeChallenge.completedToday 
-                                        ? 'bg-emerald-500 text-white shadow-[0_0_30px_rgba(16,185,129,0.4)] border border-emerald-400' 
-                                        : 'bg-white text-black hover:bg-neutral-200 shadow-xl'
-                                }`}
+                                className={`w-full py-4 rounded-xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${activeChallenge.completedToday ? 'bg-emerald-500 text-black shadow-lg' : 'bg-white text-black hover:bg-neutral-200'}`}
                             >
-                                {activeChallenge.completedToday ? (
-                                    <>
-                                        <span>completado</span>
-                                        <span className="material-symbols-outlined text-lg">check</span>
-                                    </>
-                                ) : (
-                                    <span>marcar hoy</span>
-                                )}
+                                <span className="material-symbols-outlined text-lg">{activeChallenge.completedToday ? 'check_circle' : 'radio_button_unchecked'}</span>
+                                {activeChallenge.completedToday ? 'completado' : 'marcar como hecho'}
                             </button>
                         </div>
                     </div>
                 </div>
-                <p className="text-center text-[10px] text-neutral-600 mt-3 font-bold uppercase tracking-widest opacity-60">
-                    constancia &gt; intensidad
-                </p>
             </section>
 
-            {/* BLOQUE 2: SECUNDARIOS */}
+            {/* BLOQUE 2: RETOS SECUNDARIOS */}
             <section className="space-y-4">
-                <h3 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-2">mantenimiento</h3>
-                <div className="space-y-3">
-                    {secondaryChallenges.map(challenge => (
+                <h3 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-2">hábitos atómicos</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    {secondaryChallenges.map((challenge) => (
                         <button 
                             key={challenge.id}
                             onClick={() => toggleSecondary(challenge.id)}
-                            className={`w-full rounded-[1.2rem] p-5 flex items-center justify-between transition-all active:scale-[0.98] border group ${
-                                challenge.done 
-                                    ? 'bg-neutral-900/40 border-emerald-500/20' 
-                                    : 'bg-neutral-900/40 border-white/5 hover:bg-neutral-800/60'
-                            }`}
+                            className={`relative rounded-[2rem] p-5 flex flex-col justify-between h-40 transition-all active:scale-95 border ${challenge.done ? 'bg-neutral-900 border-emerald-500/30' : 'bg-neutral-900/40 border-white/5 hover:border-white/10'}`}
                         >
-                            <div className="flex items-center gap-4">
-                                <div className={`size-6 rounded-full border flex items-center justify-center transition-all duration-300 ${
-                                    challenge.done ? 'bg-emerald-500 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'border-white/20 bg-transparent group-hover:border-white/40'
-                                }`}>
-                                    {challenge.done && <span className="material-symbols-outlined text-black text-xs font-bold">check</span>}
-                                </div>
-                                <div className="text-left">
-                                    <p className={`text-sm font-bold transition-all duration-300 ${challenge.done ? 'text-white/40 line-through decoration-white/40' : 'text-white'}`}>
-                                        {challenge.title}
-                                    </p>
-                                    <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wide">{challenge.time}</p>
-                                </div>
+                            <div className="flex justify-between items-start w-full">
+                                <span className={`material-symbols-outlined text-2xl ${challenge.done ? 'text-emerald-400 animate-in zoom-in spin-in-180' : 'text-neutral-600'}`}>
+                                    {challenge.done ? 'check_circle' : 'circle'}
+                                </span>
+                                <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest">{challenge.time}</span>
+                            </div>
+                            
+                            <div className="text-left space-y-1">
+                                <p className={`text-sm font-bold leading-tight ${challenge.done ? 'text-white line-through decoration-white/30' : 'text-white'}`}>
+                                    {challenge.title}
+                                </p>
+                                <p className="text-[10px] text-neutral-500 font-medium">diario</p>
                             </div>
                         </button>
                     ))}
+                    
+                    {/* Add New Placeholder */}
+                    <button className="rounded-[2rem] p-5 flex flex-col items-center justify-center h-40 border border-white/5 border-dashed bg-white/5 hover:bg-white/10 transition-colors gap-2 group">
+                        <div className="size-10 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <span className="material-symbols-outlined text-white/50">add</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">añadir hábito</span>
+                    </button>
                 </div>
             </section>
 
-            {/* BLOQUE 4: NUEVO / SUGERENCIA */}
-            <section className="pt-2">
-                <button className="w-full py-4 rounded-[1.2rem] border border-dashed border-white/10 text-neutral-500 hover:text-white hover:border-white/30 hover:bg-white/5 transition-all text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-                    <span className="material-symbols-outlined text-lg">add</span>
-                    añadir nuevo hábito
-                </button>
-            </section>
-
         </main>
+        
         <BottomNav />
     </div>
   );

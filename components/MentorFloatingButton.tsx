@@ -1,26 +1,27 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const MentorFloatingButton: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [contextHint, setContextHint] = useState('mentor ai');
+
+  // Helper para determinar el contexto síncronamente y evitar parpadeos en la animación
+  const getContextHint = (path: string) => {
+    switch(path) {
+        case '/journal': return 'analizar mente';
+        case '/challenges': return 'coach de hábitos';
+        case '/tracker': return 'apoyo emocional';
+        case '/dashboard': return 'guía estoico';
+        default: return 'mentor ai';
+    }
+  };
+
+  const contextHint = getContextHint(location.pathname);
 
   // Ocultar en onboarding, auth, chat y sesiones inmersivas (meditación/oración)
   const hideOn = ['/', '/auth', '/needs', '/suggestion', '/mentor', '/meditation', '/prayer'];
   const shouldHide = hideOn.includes(location.pathname);
-
-  // Lógica contextual
-  useEffect(() => {
-    switch(location.pathname) {
-        case '/journal': setContextHint('analizar mente'); break;
-        case '/challenges': setContextHint('coach de hábitos'); break;
-        case '/tracker': setContextHint('apoyo emocional'); break;
-        case '/dashboard': setContextHint('guía estoico'); break;
-        default: setContextHint('mentor ai');
-    }
-  }, [location.pathname]);
 
   if (shouldHide) return null;
 
@@ -32,10 +33,25 @@ const MentorFloatingButton: React.FC = () => {
             0%, 100% { box-shadow: 0 0 25px rgba(255, 255, 255, 0.1), inset 0 0 20px rgba(255, 255, 255, 0.05); }
             50% { box-shadow: 0 0 40px rgba(100, 200, 255, 0.3), inset 0 0 30px rgba(255, 255, 255, 0.2); }
           }
+          @keyframes enter-from-bottom-left {
+            0% {
+              opacity: 0;
+              transform: translate(-60px, 60px) scale(0.5) rotate(-45deg);
+              filter: blur(10px);
+            }
+            100% {
+              opacity: 1;
+              transform: translate(0, 0) scale(1) rotate(0deg);
+              filter: blur(0px);
+            }
+          }
         `}
       </style>
       
-      <div className="fixed bottom-28 right-6 z-[60] animate-in slide-in-from-bottom-16 fade-in zoom-in-90 duration-1000 ease-[cubic-bezier(0.25,0.1,0.25,1)]">
+      <div 
+        className="fixed bottom-28 right-6 z-[60]"
+        style={{ animation: 'enter-from-bottom-left 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' }}
+      >
         <div className="group relative flex items-center">
           {/* Context Tooltip (Glass Style) - Ajustado para salir a la izquierda */}
           <div className={`

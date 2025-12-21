@@ -93,21 +93,29 @@ const MeditationSession: React.FC = () => {
     const generateVoice = async () => {
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const cleanScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, " ... ... ");
+            // Soft pauses using ellipsis
+            const cleanScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, " ... ");
 
-            const response = await ai.models.generateContent({
+            // INCREASED TIMEOUT to 45 seconds to prioritize high quality AI voice
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Timeout: Audio generation took too long")), 45000)
+            );
+
+            const apiPromise = ai.models.generateContent({
                 model: "gemini-2.5-flash-preview-tts",
                 contents: [{ parts: [{ text: cleanScript }] }],
                 config: {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: 'Kore' },
+                            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore is suited for meditation
                         },
                     },
                 },
             });
 
+            // Race the API call against the timeout
+            const response: any = await Promise.race([apiPromise, timeoutPromise]);
             const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
             
             if (base64Audio) {
@@ -125,8 +133,8 @@ const MeditationSession: React.FC = () => {
                 throw new Error("No audio data");
             }
         } catch (error) {
-            console.error("Error generating neural voice, falling back:", error);
-            // Fallback to browser TTS
+            console.warn("Using fallback TTS due to error or timeout:", error);
+            // Fallback to browser TTS (Robotic) - Only if API fails or times out
             setUseFallbackTTS(true);
             const fallbackScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, ", , , ");
             const u = new SpeechSynthesisUtterance(fallbackScript);
@@ -243,6 +251,9 @@ const MeditationSession: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-black h-full relative overflow-hidden font-sans lowercase selection:bg-cyan-500/20">
       
+      {/* BACKGROUND ANIMADO CONTINUO */}
+      <div className="absolute inset-0 bg-gradient-to-br from-cyan-900/40 via-black to-blue-900/40 animate-gradient-x z-0 opacity-80" />
+
       {/* Header */}
       <header className="px-6 pt-12 flex justify-between items-center relative z-20">
         <button onClick={() => navigate(-1)} className="size-10 flex items-center justify-center text-neutral-500 hover:text-white transition-colors">
@@ -250,7 +261,7 @@ const MeditationSession: React.FC = () => {
         </button>
         <div className="flex flex-col items-center">
              <span className="text-[10px] font-bold text-cyan-500 uppercase tracking-[0.2em]">reset mental • 3 min</span>
-             {isLoadingVoice && <span className="text-[8px] text-cyan-500/60 font-bold animate-pulse mt-1">sincronizando voz...</span>}
+             {isLoadingVoice && <span className="text-[8px] text-cyan-500/60 font-bold animate-pulse mt-1">sincronizando voz humana...</span>}
         </div>
         <button onClick={toggleMute} className={`size-10 flex items-center justify-center transition-colors ${isMuted ? 'text-neutral-500' : 'text-cyan-400'}`}>
             <span className="material-symbols-outlined">{isMuted ? 'volume_off' : 'volume_up'}</span>

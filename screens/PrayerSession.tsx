@@ -96,22 +96,29 @@ const PrayerSession: React.FC = () => {
     const generateVoice = async () => {
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            // Clean script for TTS
-            const cleanScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, " ... ... ");
+            // Soft pauses using ellipsis for natural flow
+            const cleanScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, " ... ");
 
-            const response = await ai.models.generateContent({
+            // INCREASED TIMEOUT to 45 seconds to prioritize high quality AI voice
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Timeout: Audio generation took too long")), 45000)
+            );
+
+            const apiPromise = ai.models.generateContent({
                 model: "gemini-2.5-flash-preview-tts",
                 contents: [{ parts: [{ text: cleanScript }] }],
                 config: {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' is deep and calming
+                            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore is deep and calming
                         },
                     },
                 },
             });
 
+            // Race the API call against the timeout
+            const response: any = await Promise.race([apiPromise, timeoutPromise]);
             const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
             
             if (base64Audio) {
@@ -130,8 +137,8 @@ const PrayerSession: React.FC = () => {
                 throw new Error("No audio data returned");
             }
         } catch (error) {
-            console.error("Error generating neural voice, falling back:", error);
-            // Fallback to browser TTS
+            console.warn("Using fallback TTS due to error or timeout:", error);
+            // Fallback to browser TTS (Robotic Voice) - ONLY IF API FAILS
             setUseFallbackTTS(true);
             const fallbackScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, ", , , ");
             const u = new SpeechSynthesisUtterance(fallbackScript);
@@ -272,6 +279,9 @@ const PrayerSession: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-black h-full relative overflow-hidden font-sans lowercase selection:bg-amber-500/20">
       
+      {/* BACKGROUND ANIMADO CONTINUO */}
+      <div className="absolute inset-0 bg-gradient-to-br from-amber-900/40 via-black to-purple-900/40 animate-gradient-x z-0 opacity-80" />
+
       {/* Musica Ambiental Etérea */}
       <audio ref={musicRef} loop src="https://cdn.pixabay.com/audio/2022/10/18/audio_31c261b32e.mp3" />
 
@@ -282,7 +292,7 @@ const PrayerSession: React.FC = () => {
         </button>
         <div className="flex flex-col items-center">
              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em]">pausa de rendición</span>
-             {isLoadingVoice && <span className="text-[8px] text-amber-500/60 font-bold animate-pulse mt-1">sincronizando voz...</span>}
+             {isLoadingVoice && <span className="text-[8px] text-amber-500/60 font-bold animate-pulse mt-1">sincronizando voz humana...</span>}
         </div>
         <button onClick={toggleMute} className={`size-10 flex items-center justify-center transition-colors ${isMuted ? 'text-neutral-500' : 'text-amber-400'}`}>
             <span className="material-symbols-outlined">{isMuted ? 'volume_off' : 'volume_up'}</span>
