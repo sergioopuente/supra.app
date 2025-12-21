@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleGenAI } from '@google/genai';
 import BottomNav from '../components/BottomNav';
@@ -17,6 +17,13 @@ const Reflection: React.FC = () => {
   const [aiResult, setAiResult] = useState<AiAnalysis | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
+  // Media States
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
+
   // Datos simulados para el historial
   const history = [
     { id: 1, date: 'ayer', preview: 'la presión del proyecto final me tiene bloqueado, necesito priorizar...', tag: 'ansiedad' },
@@ -24,12 +31,111 @@ const Reflection: React.FC = () => {
     { id: 3, date: 'dom 11', preview: 'nada especial, solo descanso y lectura.', tag: 'calma' },
   ];
 
+  // --- AUDIO TRANSCRIPTION LOGIC ---
+  const handleToggleRecord = async () => {
+    if (isRecording) {
+        mediaRecorderRef.current?.stop();
+        setIsRecording(false);
+    } else {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); // Use webm for browser compatibility
+                await transcribeAudio(audioBlob);
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Error accessing microphone", err);
+            alert("No se pudo acceder al micrófono.");
+        }
+    }
+  };
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+      setIsProcessingMedia(true);
+      try {
+          // Convert Blob to Base64
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+              const base64Audio = (reader.result as string).split(',')[1];
+              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+              
+              const response = await ai.models.generateContent({
+                  model: 'gemini-3-flash-preview',
+                  contents: {
+                      parts: [
+                          { inlineData: { mimeType: 'audio/webm', data: base64Audio } },
+                          { text: "Transcribe el siguiente audio exactamente como se escucha. Solo devuelve el texto." }
+                      ]
+                  }
+              });
+
+              if (response.text) {
+                  setEntryText(prev => prev + (prev ? ' ' : '') + response.text);
+              }
+              setIsProcessingMedia(false);
+          };
+      } catch (e) {
+          console.error("Transcription error", e);
+          setIsProcessingMedia(false);
+      }
+  };
+
+  // --- IMAGE ANALYSIS LOGIC ---
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setIsProcessingMedia(true);
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+          const base64Image = (reader.result as string).split(',')[1];
+          const mimeType = file.type;
+
+          try {
+              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+              const response = await ai.models.generateContent({
+                  model: 'gemini-3-pro-preview',
+                  contents: {
+                      parts: [
+                          { inlineData: { mimeType: mimeType, data: base64Image } },
+                          { text: "Analiza esta imagen desde una perspectiva estoica y psicológica. Describe brevemente el ambiente emocional que transmite y genera una reflexión profunda de una frase (máximo 15 palabras) en minúsculas." }
+                      ]
+                  }
+              });
+
+              if (response.text) {
+                  setEntryText(prev => prev + (prev ? '\n\n' : '') + `[análisis visual]: ${response.text}`);
+              }
+          } catch (e) {
+              console.error("Image analysis error", e);
+          } finally {
+              setIsProcessingMedia(false);
+          }
+      };
+  };
+
+  // --- TEXT ANALYSIS LOGIC ---
   const handleAnalyze = async () => {
     if (!entryText.trim()) return;
     setIsAnalyzing(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Usamos flash-preview para respuesta rápida
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Analiza este texto de diario personal: "${entryText}".
@@ -49,7 +155,6 @@ const Reflection: React.FC = () => {
             const json = JSON.parse(text);
             setAiResult(json);
           } catch (e) {
-             // Fallback silencioso si el parse falla
              setAiResult({ mood: 'reflexivo', insight: 'el orden exterior comienza con el orden interior.' });
           }
       }
@@ -62,7 +167,6 @@ const Reflection: React.FC = () => {
 
   const handleSave = () => {
       setSaveStatus('saving');
-      // Simulación de guardado
       setTimeout(() => {
           setSaveStatus('saved');
           setTimeout(() => {
@@ -150,12 +254,29 @@ const Reflection: React.FC = () => {
                     <textarea 
                         value={entryText}
                         onChange={(e) => setEntryText(e.target.value)}
-                        placeholder="vacia tu mente aquí. nadie más lo leerá..."
-                        className="w-full h-full bg-transparent text-lg text-white placeholder-neutral-700 outline-none resize-none leading-relaxed font-normal selection:bg-white/20"
+                        placeholder={isProcessingMedia ? "procesando..." : "vacia tu mente aquí..."}
+                        className="w-full h-full bg-transparent text-lg text-white placeholder-neutral-700 outline-none resize-none leading-relaxed font-normal selection:bg-white/20 pb-20"
                         spellCheck={false}
                         autoFocus
                     />
                     
+                    {/* Media Tools */}
+                    <div className="absolute bottom-4 left-0 flex gap-2">
+                         <button 
+                            onClick={handleToggleRecord}
+                            className={`size-10 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/20 text-red-400 animate-pulse border border-red-500/50' : 'bg-neutral-800/80 text-neutral-400 border border-white/5 hover:text-white'}`}
+                         >
+                             <span className="material-symbols-outlined text-xl">{isRecording ? 'stop' : 'mic'}</span>
+                         </button>
+                         <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="size-10 rounded-full bg-neutral-800/80 border border-white/5 flex items-center justify-center text-neutral-400 hover:text-white transition-all"
+                         >
+                             <span className="material-symbols-outlined text-xl">image</span>
+                             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                         </button>
+                    </div>
+
                     {/* Floating Analyze Button (Only appears when meaningful text exists) */}
                     {entryText.length > 20 && !aiResult && !isAnalyzing && (
                         <button 
@@ -167,10 +288,10 @@ const Reflection: React.FC = () => {
                         </button>
                     )}
 
-                    {isAnalyzing && (
+                    {(isAnalyzing || isProcessingMedia) && (
                          <div className="absolute bottom-4 right-0 flex items-center gap-2 px-4 py-2 bg-black/40 rounded-full border border-white/5 backdrop-blur-sm">
                              <div className="size-3 border-2 border-white/20 border-t-purple-400 rounded-full animate-spin" />
-                             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">leyendo...</span>
+                             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{isAnalyzing ? 'leyendo...' : 'procesando media...'}</span>
                          </div>
                     )}
                 </div>

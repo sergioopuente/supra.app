@@ -31,7 +31,12 @@ const BottomNav: React.FC = () => {
                         <div className="absolute inset-0 bg-white/20 blur-xl rounded-full" />
                     )}
                     
-                    <span className={`material-symbols-outlined text-[24px] z-10 transition-colors duration-300 ${isActive ? 'text-white icon-filled drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'text-neutral-500 group-hover:text-white/80'}`}>
+                    <span 
+                        className={`material-symbols-outlined text-[24px] z-10 transition-colors duration-300 ${isActive ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'text-neutral-500 group-hover:text-white/80'}`}
+                        style={{ 
+                            fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" 
+                        }}
+                    >
                         {item.icon}
                     </span>
                 </div>

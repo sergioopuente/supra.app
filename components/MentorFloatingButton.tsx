@@ -7,9 +7,9 @@ const MentorFloatingButton: React.FC = () => {
   const location = useLocation();
   const [contextHint, setContextHint] = useState('mentor ai');
 
-  // Ocultar solo en onboarding
-  const hideOn = ['/', '/needs', '/suggestion'];
-  if (hideOn.includes(location.pathname)) return null;
+  // Ocultar en onboarding, auth, chat y sesiones inmersivas (meditación/oración)
+  const hideOn = ['/', '/auth', '/needs', '/suggestion', '/mentor', '/meditation', '/prayer'];
+  const shouldHide = hideOn.includes(location.pathname);
 
   // Lógica contextual
   useEffect(() => {
@@ -17,9 +17,12 @@ const MentorFloatingButton: React.FC = () => {
         case '/journal': setContextHint('analizar mente'); break;
         case '/challenges': setContextHint('coach de hábitos'); break;
         case '/tracker': setContextHint('apoyo emocional'); break;
-        default: setContextHint('guía estoico');
+        case '/dashboard': setContextHint('guía estoico'); break;
+        default: setContextHint('mentor ai');
     }
   }, [location.pathname]);
+
+  if (shouldHide) return null;
 
   return (
     <>
@@ -32,15 +35,15 @@ const MentorFloatingButton: React.FC = () => {
         `}
       </style>
       
-      <div className="fixed bottom-28 left-6 z-[60]">
+      <div className="fixed bottom-28 right-6 z-[60] animate-in slide-in-from-bottom-16 fade-in zoom-in-90 duration-1000 ease-[cubic-bezier(0.25,0.1,0.25,1)]">
         <div className="group relative flex items-center">
-          {/* Context Tooltip (Glass Style) */}
+          {/* Context Tooltip (Glass Style) - Ajustado para salir a la izquierda */}
           <div className={`
-              absolute left-full ml-5 px-4 py-2
+              absolute right-full mr-5 px-4 py-2
               rounded-2xl liquid-glass
               text-white text-[10px] font-bold uppercase tracking-widest
               opacity-0 group-hover:opacity-100 transition-all duration-300
-              translate-x-[-10px] group-hover:translate-x-0
+              translate-x-[10px] group-hover:translate-x-0
               whitespace-nowrap pointer-events-none z-20
           `}>
               {contextHint}

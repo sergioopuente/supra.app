@@ -11,6 +11,11 @@ import Privacy from './screens/Privacy';
 import Suggestion from './screens/Suggestion';
 import MentorChat from './screens/MentorChat';
 import Challenges from './screens/Challenges';
+import Terms from './screens/Terms';
+import PrivacyPolicy from './screens/PrivacyPolicy';
+import Support from './screens/Support';
+import PrayerSession from './screens/PrayerSession';
+import MeditationSession from './screens/MeditationSession';
 import MentorFloatingButton from './components/MentorFloatingButton';
 
 const App: React.FC = () => {
@@ -29,6 +34,11 @@ const App: React.FC = () => {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/suggestion" element={<Suggestion />} />
           <Route path="/mentor" element={<MentorChat />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/support" element={<Support />} />
+          <Route path="/prayer" element={<PrayerSession />} />
+          <Route path="/meditation" element={<MeditationSession />} />
         </Routes>
         <MentorFloatingButton />
       </div>
