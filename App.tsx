@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import Welcome from './screens/Welcome';
 import Auth from './screens/Auth';
@@ -19,6 +19,25 @@ import MeditationSession from './screens/MeditationSession';
 import MentorFloatingButton from './components/MentorFloatingButton';
 
 const App: React.FC = () => {
+  
+  // Inicialización de Tema
+  useEffect(() => {
+    try {
+        const savedProfile = localStorage.getItem('supra_profile');
+        if (savedProfile) {
+            const profile = JSON.parse(savedProfile);
+            // Si darkMode es false explícitamente, activamos light-mode
+            if (profile.darkMode === false) {
+                document.documentElement.classList.add('light-mode');
+            } else {
+                document.documentElement.classList.remove('light-mode');
+            }
+        }
+    } catch (e) {
+        console.error("Error reading theme preference", e);
+    }
+  }, []);
+
   return (
     <Router>
       <div className="max-w-md mx-auto h-screen relative bg-black overflow-hidden flex flex-col font-sans">
