@@ -5,6 +5,20 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>SUPRA - Bienestar Interior</title>
+    <!-- PWA Manifest & Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <script>
+        // CRITICAL POLYFILL FOR MIGRATION
+        // Esto evita errores de "process is not defined" en entornos de navegador puro
+        if (typeof process === 'undefined') {
+            window.process = { env: {} };
+        }
+    </script>
+
     <script type="importmap">
 {
   "imports": {
@@ -17,8 +31,14 @@
     "expo-router": "https://esm.sh/expo-router@^6.0.21",
     "expo-splash-screen": "https://esm.sh/expo-splash-screen@^31.0.13",
     "@expo-google-fonts/inter": "https://esm.sh/@expo-google-fonts/inter@^0.4.2",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "next/": "https://esm.sh/next@^16.1.1/",
+    "next": "https://esm.sh/next@^16.1.1"
   }
 }
 </script>
@@ -90,6 +110,43 @@
         .apple-blur {
             backdrop-filter: blur(25px) saturate(180%);
             -webkit-backdrop-filter: blur(25px) saturate(180%);
+        }
+
+        /* --- PERFORMANCE MODE (NO BLUR) --- */
+        /* Activated via JS based on hardware capability or user setting */
+        html.performance-mode .liquid-glass,
+        html.performance-mode .liquid-glass-heavy,
+        html.performance-mode .apple-blur,
+        html.performance-mode .backdrop-blur-xl,
+        html.performance-mode .backdrop-blur-3xl,
+        html.performance-mode .backdrop-blur-md,
+        html.performance-mode .backdrop-blur-sm,
+        html.performance-mode .backdrop-blur-lg {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        /* Solid fallbacks for Performance Mode */
+        html.performance-mode .liquid-glass {
+            background: rgba(20, 20, 20, 0.95) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        }
+        
+        html.performance-mode .liquid-glass-heavy {
+            background: rgba(10, 10, 10, 0.98) !important;
+            border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
+        }
+
+        /* Fix specific elements in Performance Mode */
+        html.performance-mode .bg-black\/30 { background-color: rgba(0,0,0, 0.8) !important; }
+        html.performance-mode .bg-black\/40 { background-color: rgba(0,0,0, 0.9) !important; }
+        html.performance-mode .bg-black\/60 { background-color: rgba(0,0,0, 0.95) !important; }
+        html.performance-mode .bg-black\/80 { background-color: #000000 !important; }
+
+        /* Disable heavy gradients animations in Performance Mode */
+        html.performance-mode .animate-gradient-x {
+            animation: none !important;
+            background-size: cover !important;
         }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -198,6 +255,18 @@
             box-shadow: 0 10px 40px rgba(0,0,0, 0.1) !important;
         }
     </style>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          // Register generic SW for PWA capability
+          navigator.serviceWorker.register('/service-worker.js').then(function(registration) {
+            console.log('Supra PWA: ServiceWorker registration successful');
+          }, function(err) {
+            console.log('Supra PWA: ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
 </head>
 <body>
     <div id="root"></div>

@@ -1,76 +1,190 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Analytics, EVENTS } from '../utils/Analytics';
 
 const Needs: React.FC = () => {
   const navigate = useNavigate();
-  const [selected, setSelected] = useState<string[]>(['calma']);
+  const [step, setStep] = useState(1);
+  
+  // State Data
+  const [mood, setMood] = useState(50);
+  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+  const [name, setName] = useState('');
 
-  const needs = [
-    { id: 'calma', icon: 'cloud', title: 'calma', subtitle: 'manejar ansiedad' },
-    { id: 'descanso', icon: 'bedtime', title: 'descanso', subtitle: 'dormir mejor' },
-    { id: 'tribu', icon: 'diversity_3', title: 'tribu', subtitle: 'conectar' },
-    { id: 'energia', icon: 'bolt', title: 'energía', subtitle: 'motivación' },
-    { id: 'fuerza', icon: 'shield', title: 'fuerza', subtitle: 'resiliencia' },
-    { id: 'mente', icon: 'psychology', title: 'mente', subtitle: 'autoconocimiento' },
+  const goals = [
+    { id: 'ansiedad', icon: 'cloud', title: 'reducir ansiedad', desc: 'busco calma mental' },
+    { id: 'foco', icon: 'bolt', title: 'productividad', desc: 'quiero lograr más' },
+    { id: 'proposito', icon: 'north_east', title: 'propósito', desc: 'me siento perdido' },
+    { id: 'dormir', icon: 'bedtime', title: 'dormir mejor', desc: 'insomnio recurrente' },
   ];
 
-  const toggle = (id: string) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  // Check for "Inverted Onboarding" data
+  useEffect(() => {
+      const preSelectedMood = localStorage.getItem('supra_onboarding_mood');
+      if (preSelectedMood) {
+          setMood(parseInt(preSelectedMood));
+          setStep(2); // Skip Step 1
+          localStorage.removeItem('supra_onboarding_mood'); // Clear it
+      }
+  }, []);
+
+  const handleNext = () => {
+    Analytics.track(EVENTS.ONBOARDING_STEP_COMPLETE, { step, goal: selectedGoal });
+    
+    if (step < 3) {
+        setStep(step + 1);
+    } else {
+        // Save to LocalStorage for the Analysis Screen
+        const onboardingData = {
+            mood,
+            goal: selectedGoal,
+            name: name || 'viajero'
+        };
+        localStorage.setItem('supra_onboarding_temp', JSON.stringify(onboardingData));
+        
+        Analytics.track(EVENTS.ONBOARDING_COMPLETE, { goal: selectedGoal });
+        Analytics.identify(name); // Vincular usuario a la sesión
+        
+        navigate('/suggestion');
+    }
+  };
+
+  const isNextDisabled = () => {
+      if (step === 2 && !selectedGoal) return true;
+      if (step === 3 && !name.trim()) return true;
+      return false;
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-black lowercase">
-      <header className="px-6 pt-12 flex items-center justify-between">
-        <button onClick={() => navigate(-1)} className="size-10 flex items-center justify-center text-white">
-          <span className="material-symbols-outlined">arrow_back</span>
+    <div className="flex-1 flex flex-col bg-black h-full overflow-hidden relative font-sans lowercase selection:bg-white selection:text-black">
+      
+      {/* Background Ambient */}
+      <div className={`absolute inset-0 transition-opacity duration-1000 ${step === 1 ? 'opacity-20 bg-blue-900' : step === 2 ? 'opacity-20 bg-purple-900' : 'opacity-20 bg-emerald-900'}`} />
+      <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black" />
+
+      {/* Progress Header */}
+      <header className="px-8 pt-12 flex justify-between items-center relative z-20">
+        <button 
+            onClick={() => step > 1 ? setStep(step - 1) : navigate(-1)} 
+            className="size-10 flex items-center justify-center text-neutral-500 hover:text-white transition-colors"
+        >
+            <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="flex gap-2">
-            {[1,2,3,4].map(i => <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${i===1 ? 'w-8 bg-white' : 'w-1.5 bg-neutral-800'}`} />)}
+            {[1, 2, 3].map(i => (
+                <div key={i} className={`h-1 rounded-full transition-all duration-500 ${i === step ? 'w-8 bg-white' : 'w-2 bg-white/20'}`} />
+            ))}
         </div>
         <div className="size-10" />
       </header>
 
-      <div className="px-8 mt-12 mb-10 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-3">¿qué necesitas hoy?</h1>
-        <p className="text-neutral-500 text-lg font-light">selecciona las metas que resuenen contigo.</p>
-      </div>
-
-      <div className="flex-1 px-6 overflow-y-auto no-scrollbar pb-40">
-        <div className="grid grid-cols-2 gap-4">
-            {needs.map(need => (
-                <button 
-                    key={need.id}
-                    onClick={() => toggle(need.id)}
-                    className={`h-48 rounded-[2.5rem] p-6 flex flex-col justify-between transition-all active:scale-95 border-2 ${
-                        selected.includes(need.id) 
-                            ? 'bg-white text-black border-white shadow-2xl' 
-                            : 'bg-neutral-900 text-white border-white/5 opacity-60'
-                    }`}
-                >
-                    <div className="flex justify-between items-start">
-                        <span className={`material-symbols-outlined text-4xl ${selected.includes(need.id) ? 'icon-filled' : ''}`}>
-                            {need.icon}
+      {/* Content Container */}
+      <main className="flex-1 flex flex-col px-8 relative z-10 pt-10">
+        
+        {/* STEP 1: MOOD CALIBRATION (Only shown if coming from direct link, not Welcome) */}
+        {step === 1 && (
+            <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-right-8 duration-500">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-4">paso 1 de 3 • calibración</span>
+                <h1 className="text-4xl font-bold text-white tracking-tighter mb-4 leading-[1.1]">
+                    ¿cómo sientes tu <br/> <span className="text-neutral-500">energía hoy?</span>
+                </h1>
+                
+                <div className="flex-1 flex flex-col justify-center gap-12">
+                    <div className="relative size-48 mx-auto bg-neutral-900/50 rounded-full flex items-center justify-center border border-white/5 shadow-[0_0_60px_rgba(255,255,255,0.05)]">
+                        <span className={`material-symbols-outlined text-8xl text-white transition-all duration-300 ${mood < 30 ? 'opacity-40 blur-[1px]' : mood > 70 ? 'opacity-100 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'opacity-70'}`}>
+                            {mood > 80 ? 'bolt' : mood > 60 ? 'wb_sunny' : mood > 40 ? 'cloud' : 'nights_stay'}
                         </span>
-                        {selected.includes(need.id) && <span className="material-symbols-outlined text-xl">check_circle</span>}
+                        <div className="absolute inset-0 rounded-full border border-white/10 scale-110 animate-[spin_10s_linear_infinite]" />
                     </div>
-                    <div className="text-left">
-                        <p className="text-lg font-bold leading-tight">{need.title}</p>
-                        <p className={`text-xs mt-1 ${selected.includes(need.id) ? 'text-black/60' : 'text-neutral-500'}`}>{need.subtitle}</p>
-                    </div>
-                </button>
-            ))}
-        </div>
-      </div>
 
-      <div className="fixed bottom-12 right-8 z-50">
-        <button 
-            onClick={() => navigate('/suggestion')}
-            className="size-20 bg-white text-black rounded-full shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all"
-        >
-            <span className="material-symbols-outlined text-4xl">arrow_forward</span>
-        </button>
-      </div>
+                    <div className="space-y-6">
+                        <input 
+                            type="range" 
+                            min="0" max="100" 
+                            value={mood} 
+                            onChange={(e) => setMood(Number(e.target.value))}
+                            className="w-full h-2 bg-neutral-800 rounded-full appearance-none cursor-pointer accent-white"
+                        />
+                        <div className="flex justify-between text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                            <span>agotado</span>
+                            <span>imparable</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* STEP 2: GOAL SELECTION */}
+        {step === 2 && (
+            <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-right-8 duration-500">
+                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-4">paso 2 de 3 • objetivo</span>
+                <h1 className="text-4xl font-bold text-white tracking-tighter mb-8 leading-[1.1]">
+                    ¿cuál es tu <br/> <span className="text-neutral-500">batalla principal?</span>
+                </h1>
+
+                <div className="grid grid-cols-1 gap-4">
+                    {goals.map(g => (
+                        <button
+                            key={g.id}
+                            onClick={() => setSelectedGoal(g.id)}
+                            className={`p-5 rounded-3xl border text-left flex items-center gap-5 transition-all duration-300 active:scale-[0.98] ${
+                                selectedGoal === g.id 
+                                ? 'bg-white text-black border-white shadow-[0_0_30px_rgba(255,255,255,0.15)]' 
+                                : 'bg-neutral-900/40 text-neutral-400 border-white/5 hover:bg-neutral-800 hover:border-white/10'
+                            }`}
+                        >
+                            <div className={`size-12 rounded-full flex items-center justify-center shrink-0 transition-colors ${selectedGoal === g.id ? 'bg-black text-white' : 'bg-white/5 text-neutral-500'}`}>
+                                <span className="material-symbols-outlined text-xl">{g.icon}</span>
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold leading-tight">{g.title}</h3>
+                                <p className={`text-[10px] font-medium uppercase tracking-wide mt-1 ${selectedGoal === g.id ? 'text-neutral-600' : 'text-neutral-600'}`}>
+                                    {g.desc}
+                                </p>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* STEP 3: IDENTITY */}
+        {step === 3 && (
+            <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-right-8 duration-500">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-4">paso 3 de 3 • identidad</span>
+                <h1 className="text-4xl font-bold text-white tracking-tighter mb-4 leading-[1.1]">
+                    una última cosa. <br/> <span className="text-neutral-500">¿cómo te llamas?</span>
+                </h1>
+                
+                <div className="flex-1 flex flex-col justify-center">
+                    <input 
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="tu nombre..."
+                        className="w-full bg-transparent border-b-2 border-white/20 py-4 text-3xl font-bold text-white placeholder-neutral-700 outline-none focus:border-white transition-colors text-center"
+                        autoFocus
+                    />
+                    <p className="text-center mt-6 text-neutral-500 text-sm leading-relaxed max-w-xs mx-auto">
+                        usaremos esto para personalizar tu mentor ia. tu privacidad es absoluta.
+                    </p>
+                </div>
+            </div>
+        )}
+
+        {/* Floating Action Button */}
+        <div className="pb-10 pt-4">
+            <button 
+                onClick={handleNext}
+                disabled={isNextDisabled()}
+                className="w-full h-16 bg-white text-black rounded-full font-bold text-lg flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all disabled:opacity-30 disabled:scale-100"
+            >
+                <span>{step === 3 ? 'finalizar' : 'continuar'}</span>
+                <span className="material-symbols-outlined">{step === 3 ? 'check' : 'arrow_forward'}</span>
+            </button>
+        </div>
+
+      </main>
     </div>
   );
 };

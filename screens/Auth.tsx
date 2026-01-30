@@ -1,6 +1,9 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth, isFirebaseActive } from '../utils/Firebase';
+import { SyncManager } from '../utils/SyncManager';
 
 const Auth: React.FC = () => {
   const navigate = useNavigate();
@@ -8,25 +11,77 @@ const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'options' | 'email'>('options');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Simular Haptic Feedback de Expo
   const triggerHaptic = () => {
     if (navigator.vibrate) navigator.vibrate(10);
   };
 
-  const handleGuest = () => {
+  const handleGuest = async () => {
     triggerHaptic();
-    navigate('/needs');
+    setLoading(true);
+    
+    // 🔥 CRITICAL CHANGE: Force Firebase Anonymous Auth
+    const user = await SyncManager.ensureAuth();
+    
+    if (user) {
+        console.log("Sesión anónima creada/recuperada:", user.uid);
+        // Inicializar perfil vacío en nube si es nuevo
+        const profile = await SyncManager.getProfile();
+        if (!profile) {
+            await SyncManager.saveProfile({
+                name: 'viajero',
+                isAnon: true,
+                xp: 0,
+                joinedAt: Date.now()
+            });
+        }
+        setLoading(false);
+        navigate('/needs');
+    } else {
+        // Fallback extremo si Firebase falla (no debería ocurrir con config correcta)
+        console.warn("Fallo crítico en auth anónimo. Usando modo local.");
+        localStorage.setItem('supra_guest_mode', 'true');
+        setLoading(false);
+        navigate('/needs');
+    }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     triggerHaptic();
     setLoading(true);
-    setTimeout(() => {
+    setErrorMsg('');
+
+    if (!isFirebaseActive || !auth) {
+        setTimeout(() => {
+            setLoading(false);
+            navigate('/needs');
+        }, 1500);
+        return;
+    }
+
+    try {
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (loginError: any) {
+            if (loginError.code === 'auth/user-not-found' || loginError.code === 'auth/invalid-credential') {
+                await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+                throw loginError;
+            }
+        }
+        
+        // Sincronizar datos al entrar
+        await SyncManager.getProfile();
+        
         setLoading(false);
-        navigate('/needs');
-    }, 1500);
+        navigate('/dashboard');
+    } catch (err: any) {
+        setLoading(false);
+        console.error(err);
+        setErrorMsg('Error de acceso. Verifica tus credenciales.');
+    }
   };
 
   return (
@@ -43,10 +98,8 @@ const Auth: React.FC = () => {
             <source src="https://cdn.pixabay.com/video/2020/05/25/40149-424078833_large.mp4" type="video/mp4" />
         </video>
 
-        {/* CAPA 0.5: GRADIENTE DE INMERSIÓN (Simulando LinearGradient) */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-black z-0" />
 
-        {/* CAPA 1: BRANDING SUPERIOR */}
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center pb-32">
             <span className="font-serif italic text-4xl tracking-tighter text-white drop-shadow-lg mb-2">supra</span>
             <p className="text-[10px] text-white/70 font-bold uppercase tracking-[0.3em] drop-shadow-md">
@@ -54,17 +107,19 @@ const Auth: React.FC = () => {
             </p>
         </div>
 
-        {/* CAPA 2: PANEL DE INTERACCIÓN (GLASS SHEET) */}
-        {/* Simula un BottomSheet nativo con BlurView */}
         <div className="relative z-20 bg-neutral-900/80 backdrop-blur-2xl border-t border-white/10 rounded-t-[2.5rem] p-8 pb-12 animate-in slide-in-from-bottom-10 duration-500 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             
-            {/* Indicador de "Drag" visual (Affordance) */}
             <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-8" />
+
+            {errorMsg && (
+                <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-xl text-red-200 text-xs text-center font-bold">
+                    {errorMsg}
+                </div>
+            )}
 
             {mode === 'options' ? (
                 <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     
-                    {/* BOTONES SOCIALES */}
                     <button 
                         onClick={() => triggerHaptic()}
                         className="w-full h-14 bg-white text-black rounded-2xl font-bold text-sm flex items-center justify-center gap-3 shadow-lg active:scale-[0.98] transition-transform"
@@ -81,7 +136,6 @@ const Auth: React.FC = () => {
                         <span>continuar con google</span>
                     </button>
 
-                    {/* SEPARADOR */}
                     <div className="relative py-4 flex items-center justify-center">
                         <div className="w-full border-t border-white/5 absolute" />
                         <span className="bg-transparent px-2 text-[10px] text-neutral-500 font-bold uppercase tracking-widest relative z-10">
@@ -98,13 +152,12 @@ const Auth: React.FC = () => {
 
                     <button 
                          onClick={handleGuest}
-                         className="w-full text-[10px] text-neutral-600 font-bold uppercase tracking-widest hover:text-neutral-400 pt-2 transition-colors"
+                         className="w-full text-[10px] text-neutral-600 font-bold uppercase tracking-widest hover:text-neutral-400 pt-2 transition-colors flex items-center justify-center gap-1"
                     >
-                        continuar como invitado
+                        {loading ? <span className="size-2 bg-neutral-500 rounded-full animate-ping"/> : 'continuar como invitado'}
                     </button>
                 </div>
             ) : (
-                /* VISTA DE EMAIL */
                 <form onSubmit={handleLogin} className="space-y-5 animate-in fade-in slide-in-from-right-8 duration-300">
                     
                     <div className="space-y-4">
@@ -132,7 +185,6 @@ const Auth: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* ACTION BUTTON - NEON GRADIENT */}
                     <button 
                         type="submit"
                         disabled={loading || !email}
@@ -142,7 +194,7 @@ const Auth: React.FC = () => {
                             <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         ) : (
                             <>
-                                <span>ENTRAR</span>
+                                <span>ENTRAR / REGISTRAR</span>
                                 <span className="material-symbols-outlined text-lg">arrow_forward</span>
                             </>
                         )}
@@ -158,9 +210,8 @@ const Auth: React.FC = () => {
                 </form>
             )}
 
-            {/* PRIVACY FOOTER */}
             <p className="mt-8 text-center text-[9px] text-neutral-600 max-w-[200px] mx-auto leading-relaxed">
-                al entrar, aceptas nuestra política de <span className="text-neutral-500 underline cursor-pointer">privacidad radical</span>. tus datos están encriptados.
+                tus datos se guardan de forma segura en la nube. anonimato garantizado.
             </p>
         </div>
     </div>

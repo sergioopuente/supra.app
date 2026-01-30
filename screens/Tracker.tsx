@@ -2,11 +2,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
+import { SyncManager } from '../utils/SyncManager';
 
 const Tracker: React.FC = () => {
   const navigate = useNavigate();
   const [mood, setMood] = useState(70);
   const [selectedActivities, setSelectedActivities] = useState<string[]>(['música']);
+  const [note, setNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // EMOTIONAL LOGOUT STATE
+  const [showExitQuestion, setShowExitQuestion] = useState(false);
 
   const toggleActivity = (act: string) => {
     setSelectedActivities(prev => 
@@ -22,6 +28,35 @@ const Tracker: React.FC = () => {
     { icon: 'bed', label: 'descanso' },
     { icon: 'fitness_center', label: 'entreno' },
   ];
+
+  const handleSave = async () => {
+      setIsSaving(true);
+      
+      const checkIn = {
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          mood: mood,
+          activities: selectedActivities,
+          note: note
+      };
+      
+      // Sync to Cloud
+      await SyncManager.saveCheckIn(checkIn);
+      
+      // Trigger Emotional Logout instead of direct navigation
+      setTimeout(() => {
+          setIsSaving(false);
+          setShowExitQuestion(true);
+      }, 500);
+  };
+
+  const confirmExit = () => {
+      // Fade out effect
+      setShowExitQuestion(false);
+      setTimeout(() => {
+          navigate('/dashboard');
+      }, 300);
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-black h-full overflow-hidden lowercase relative">
@@ -92,6 +127,8 @@ const Tracker: React.FC = () => {
                 <h3 className="text-lg font-bold text-white tracking-tight">una breve reflexión</h3>
                 <div className="bg-neutral-900 rounded-3xl p-6 border border-white/5 focus-within:border-white/20 transition-colors">
                     <textarea 
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
                         className="w-full bg-transparent border-none text-white placeholder-neutral-700 text-lg resize-none outline-none focus:ring-0 leading-relaxed min-h-[120px]"
                         placeholder="solo para tus ojos..."
                     />
@@ -99,14 +136,52 @@ const Tracker: React.FC = () => {
             </section>
 
             <button 
-                onClick={() => navigate('/dashboard')}
-                className="w-full h-16 bg-white text-black rounded-full font-bold text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all mb-4"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="w-full h-16 bg-white text-black rounded-full font-bold text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all mb-4 disabled:opacity-50"
             >
-                <span>guardar cambios</span>
-                <span className="material-symbols-outlined">done_all</span>
+                {isSaving ? (
+                    <span>sincronizando...</span>
+                ) : (
+                    <>
+                        <span>guardar cambios</span>
+                        <span className="material-symbols-outlined">done_all</span>
+                    </>
+                )}
             </button>
         </div>
       </div>
+      
+      {/* EMOTIONAL LOGOUT MODAL */}
+      {showExitQuestion && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-500">
+              <div className="text-center space-y-12 max-w-sm w-full animate-in zoom-in-95 duration-500 delay-100">
+                  <div className="size-24 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+                      <span className="material-symbols-outlined text-4xl text-emerald-300">spa</span>
+                  </div>
+                  
+                  <div className="space-y-3">
+                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.3em]">cierre de sesión</p>
+                      <h2 className="text-3xl font-light text-white leading-tight">¿te vas más ligero?</h2>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                      <button 
+                          onClick={confirmExit}
+                          className="w-full h-16 bg-white text-black rounded-full font-bold text-lg hover:scale-105 active:scale-95 transition-all shadow-xl"
+                      >
+                          sí, gracias
+                      </button>
+                      <button 
+                          onClick={confirmExit}
+                          className="w-full h-14 text-neutral-500 font-bold uppercase tracking-widest text-xs hover:text-white transition-colors"
+                      >
+                          un poco
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <BottomNav />
     </div>

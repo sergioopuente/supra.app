@@ -1,8 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleGenAI } from '@google/genai';
 import BottomNav from '../components/BottomNav';
+import { QuotaManager } from '../utils/QuotaManager';
+import { getLanguage, t } from '../utils/Translations';
+import { SyncManager } from '../utils/SyncManager';
+import { isFirebaseActive } from '../utils/Firebase';
 
 // Definición de tipos para el caché
 interface CachedQuote {
@@ -11,6 +15,7 @@ interface CachedQuote {
   slot: 'morning' | 'afternoon' | 'night';
   timestamp: number;
   mode: 'stoic' | 'spiritual';
+  language: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -25,7 +30,18 @@ const Dashboard: React.FC = () => {
   
   // Perfil y Preferencias
   const [isSpiritual, setIsSpiritual] = useState(false);
-  const [userName, setUserName] = useState('alex');
+  const [userName, setUserName] = useState('viajero');
+  const [userGoal, setUserGoal] = useState('disciplina');
+  
+  // ENERGY STATE
+  const [energy, setEnergy] = useState(100);
+  
+  // DAILY MOMENT STATE
+  const [showDailyMoment, setShowDailyMoment] = useState(false);
+  const [dailyMomentText, setDailyMomentText] = useState('');
+  const [isPlayingMoment, setIsPlayingMoment] = useState(false);
+
+  const currentLang = getLanguage();
 
   useEffect(() => {
     // 1. Configurar Saludo y Fecha
@@ -33,90 +49,153 @@ const Dashboard: React.FC = () => {
     let currentSlot: 'morning' | 'afternoon' | 'night' = 'morning';
 
     if (hours < 12) {
-        setGreeting('buenos días');
+        setGreeting(t('dashboard.greeting.morning'));
         currentSlot = 'morning';
     } else if (hours < 20) {
-        setGreeting('buenas tardes');
+        setGreeting(t('dashboard.greeting.afternoon'));
         currentSlot = 'afternoon';
     } else {
-        setGreeting('buenas noches');
+        setGreeting(t('dashboard.greeting.night'));
         currentSlot = 'night';
     }
 
+    const localeMap = { es: 'es-ES', en: 'en-US', pt: 'pt-BR' };
     const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric' };
-    setDateStr(new Date().toLocaleDateString('es-ES', options).toLowerCase());
+    setDateStr(new Date().toLocaleDateString(localeMap[currentLang], options).toLowerCase());
 
-    // 2. Cargar Perfil
-    const savedProfileStr = localStorage.getItem('supra_profile');
-    let profileGoals = ['disciplina', 'foco']; // Default goals
-    let spiritualMode = false;
-    let name = 'alex';
+    // 2. Cargar Perfil (ASYNC REPLACEMENT)
+    const loadProfile = async () => {
+        const profile = await SyncManager.getProfile();
+        
+        let profileGoals = ['disciplina']; 
+        let spiritualMode = false;
+        let name = 'viajero';
 
-    if (savedProfileStr) {
-        const profile = JSON.parse(savedProfileStr);
-        spiritualMode = profile.spiritualMode || false;
-        name = profile.name || 'alex';
-    }
-    
-    setIsSpiritual(spiritualMode);
-    setUserName(name);
-
-    // 3. Lógica de "Smart Caching" para la Frase
-    const cachedDataStr = localStorage.getItem('supra_smart_quote');
-    let shouldFetch = true;
-
-    if (cachedDataStr) {
-        const cached: CachedQuote = JSON.parse(cachedDataStr);
-        const isSameSlot = cached.slot === currentSlot;
-        const isSameMode = cached.mode === (spiritualMode ? 'spiritual' : 'stoic');
-        const isToday = new Date(cached.timestamp).getDate() === new Date().getDate();
-
-        if (isSameSlot && isSameMode && isToday) {
-            setQuote(cached.text);
-            setQuoteSource(cached.source);
-            setLoadingQuote(false);
-            shouldFetch = false;
+        if (profile) {
+            spiritualMode = profile.spiritualMode || false;
+            name = profile.name || 'viajero';
+            if (profile.goals && profile.goals.length > 0) {
+                profileGoals = profile.goals;
+                setUserGoal(profile.goals[0]);
+            }
         }
-    }
+        
+        setIsSpiritual(spiritualMode);
+        setUserName(name);
 
-    // 4. Si no hay caché válido, generamos una nueva
-    if (shouldFetch) {
-        generateSmartQuote(spiritualMode, currentSlot, profileGoals);
-    }
+        // 3. Lógica de "Smart Caching" para la Frase (Depende de perfil cargado)
+        const cachedDataStr = localStorage.getItem('supra_smart_quote');
+        let shouldFetch = true;
 
-  }, []);
+        if (cachedDataStr) {
+            const cached: CachedQuote = JSON.parse(cachedDataStr);
+            const isSameSlot = cached.slot === currentSlot;
+            const isSameMode = cached.mode === (spiritualMode ? 'spiritual' : 'stoic');
+            const isSameLang = cached.language === currentLang;
+            const isToday = new Date(cached.timestamp).getDate() === new Date().getDate();
 
-  const generateSmartQuote = async (spiritualMode: boolean, slot: string, goals: string[]) => {
+            if (isSameSlot && isSameMode && isToday && isSameLang) {
+                setQuote(cached.text);
+                setQuoteSource(cached.source);
+                setLoadingQuote(false);
+                shouldFetch = false;
+            }
+        }
+
+        if (shouldFetch) {
+            generateSmartQuote(spiritualMode, currentSlot, profileGoals, currentLang);
+        }
+
+        // 5. CHECK DAILY MOMENT (Killer Feature)
+        checkDailyMoment(currentSlot, profileGoals, name, spiritualMode, currentLang);
+    };
+    loadProfile();
+
+    // 6. Energy Listener
+    const updateEnergy = () => setEnergy(QuotaManager.getEnergy());
+    updateEnergy(); // Init
+    window.addEventListener('energy_update', updateEnergy);
+    return () => window.removeEventListener('energy_update', updateEnergy);
+
+  }, [currentLang]);
+
+  const checkDailyMoment = async (slot: string, goals: string[], name: string, isLux: boolean, lang: string) => {
+      const todayKey = new Date().toDateString(); // "Mon Feb 24 2025"
+      const lastSeen = localStorage.getItem('supra_last_daily_moment_date');
+
+      // Solo mostramos si NO se ha visto hoy
+      if (lastSeen !== todayKey) {
+          // Pequeño delay para que la UI cargue primero
+          await new Promise(r => setTimeout(r, 1500));
+          
+          try {
+              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+              const langName = lang === 'pt' ? 'Portugués' : lang === 'en' ? 'Inglés' : 'Español';
+              
+              const prompt = `Genera una "Micro-Misión Supra" para el usuario ${name}.
+              Contexto: Es ${slot}. Objetivo: ${goals[0]}. Modo: ${isLux ? 'Espiritual/Gratitud' : 'Estoico/Disciplina'}.
+              Instrucción: Dame una sola frase imperativa, corta y poderosa (máx 15 palabras) que sea una acción mental inmediata.
+              Ejemplo Mañana: "no mires el móvil, bebe agua y define una sola meta."
+              Ejemplo Tarde: "endereza la espalda y respira, aún queda batalla."
+              Ejemplo Noche: "suelta el control, mañana será otro día."
+              Salida: Solo el texto en minúsculas. Idioma: ${langName}.`;
+
+              const response = await ai.models.generateContent({
+                  model: 'gemini-3-flash-preview',
+                  contents: prompt
+              });
+
+              if (response.text) {
+                  setDailyMomentText(response.text.trim());
+                  setShowDailyMoment(true);
+                  // Marcar como visto HOY (incluso si cierra el modal sin leer, para no spammear)
+                  localStorage.setItem('supra_last_daily_moment_date', todayKey); 
+              }
+          } catch (e) {
+              console.error("Moment generation failed", e);
+          }
+      }
+  };
+
+  const handlePlayMoment = () => {
+      if (!dailyMomentText) return;
+      setIsPlayingMoment(true);
+      const u = new SpeechSynthesisUtterance(dailyMomentText);
+      u.lang = currentLang === 'es' ? 'es-ES' : currentLang === 'en' ? 'en-US' : 'pt-BR';
+      u.rate = 0.9;
+      u.onend = () => setIsPlayingMoment(false);
+      window.speechSynthesis.speak(u);
+  };
+
+  const generateSmartQuote = async (spiritualMode: boolean, slot: string, goals: string[], lang: string) => {
     setLoadingQuote(true);
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const langName = lang === 'pt' ? 'Portuguese' : lang === 'en' ? 'English' : 'Spanish';
         
         // Contexto Temporal Dinámico
         let timeContext = "";
-        if (slot === 'morning') timeContext = "Es por la mañana. El usuario necesita enfoque, energía, propósito y claridad para empezar el día.";
-        if (slot === 'afternoon') timeContext = "Es por la tarde. El usuario puede estar cansado. Necesita resiliencia, fuerza, empuje y resistencia al estrés.";
-        if (slot === 'night') timeContext = "Es de noche. El usuario necesita calma, reflexión, gratitud y desconexión para descansar.";
+        if (slot === 'morning') timeContext = "Mañana: Foco, propósito, inicio.";
+        if (slot === 'afternoon') timeContext = "Tarde: Resiliencia, persistencia.";
+        if (slot === 'night') timeContext = "Noche: Calma, gratitud, desconexión.";
 
         // Contexto Personal
-        const userContext = `Objetivos del usuario: ${goals.join(', ')}. ${timeContext}`;
+        const userContext = `Objetivo: ${goals.join(', ')}. ${timeContext}`;
         
         let promptInstruction = '';
         let modelConfig: any = {};
 
         if (spiritualMode) {
             // Modo Espiritual (JSON)
-            promptInstruction = `Contexto: "${userContext}". Genera un VERSÍCULO BÍBLICO específico para este momento del día.
-            Responde EXCLUSIVAMENTE JSON:
-            {
-                "verse": "texto breve en minúsculas (salvo Dios/Jesús)",
-                "reference": "libro cap:vers (minúsculas)"
-            }`;
+            promptInstruction = `Contexto: "${userContext}". Genera un VERSÍCULO BÍBLICO para ahora.
+            Idioma de salida: ${langName}.
+            Responde JSON: { "verse": "texto breve minúsculas", "reference": "libro cap:vers" }`;
             modelConfig = { responseMimeType: 'application/json' };
         } else {
             // Modo Estoico (Texto)
-            promptInstruction = `Contexto: "${userContext}". Genera una frase filosófica estoica (Marco Aurelio, Séneca, Epicteto) o de psicología moderna.
-            Requisitos: Máximo 12 palabras. Impactante. Directa.
-            Formato: Solo el texto de la frase en minúsculas. Sin comillas. Sin autor en el texto.`;
+            promptInstruction = `Contexto: "${userContext}". Genera una frase estoica (Marco Aurelio, Séneca, Epicteto) o motivacional oscura.
+            Requisitos: Máximo 12 palabras. Impactante. Directa. Idioma de salida: ${langName}.
+            Formato: Solo el texto en minúsculas.`;
         }
         
         const response = await ai.models.generateContent({
@@ -152,13 +231,14 @@ const Dashboard: React.FC = () => {
             source: newSource,
             slot: slot as any,
             timestamp: Date.now(),
-            mode: spiritualMode ? 'spiritual' : 'stoic'
+            mode: spiritualMode ? 'spiritual' : 'stoic',
+            language: lang
         };
         localStorage.setItem('supra_smart_quote', JSON.stringify(cacheData));
 
     } catch (error) {
         console.error("Error generating quote", error);
-        setQuote("el obstáculo es el camino.");
+        setQuote(lang === 'pt' ? "o obstáculo é o caminho." : lang === 'en' ? "the obstacle is the way." : "el obstáculo es el camino.");
         setQuoteSource("séneca");
     } finally {
         setLoadingQuote(false);
@@ -188,24 +268,49 @@ const Dashboard: React.FC = () => {
         {/* BLOQUE 1: CONTEXTO HUMANO & RACHA */}
         <header className="flex justify-between items-start mb-10">
             <div className="space-y-1">
-                <p className="text-xs font-bold text-white/50 uppercase tracking-widest">{dateStr}</p>
+                <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold text-white/50 uppercase tracking-widest">{dateStr}</p>
+                    {/* Firebase Status Badge */}
+                    <span className={`size-1.5 rounded-full ${isFirebaseActive ? 'bg-emerald-500' : 'bg-neutral-600'}`} 
+                        title={isFirebaseActive ? 'Nube Activa' : 'Modo Local'} 
+                    />
+                </div>
                 <h1 className="text-4xl font-semibold text-white tracking-tighter leading-[1.1]">
                     {greeting}, <br/>
                     <span className="text-white/60">{userName}.</span>
                 </h1>
             </div>
             
-            {/* Racha Minimalista */}
-            <div 
-                onClick={() => navigate('/challenges')}
-                className="liquid-glass px-4 py-2 rounded-full flex items-center gap-2 border border-orange-500/20 bg-orange-500/5 active:scale-95 transition-transform cursor-pointer shadow-[0_0_15px_rgba(249,115,22,0.2)]"
-            >
-                 <span className="material-symbols-outlined text-orange-500 text-xl icon-filled animate-pulse">local_fire_department</span>
-                 <span className="text-lg font-bold text-white tabular-nums leading-none pt-0.5">12</span>
+            {/* Energy Battery & Racha */}
+            <div className="flex flex-col items-end gap-2">
+                {/* Mental Battery */}
+                <div onClick={() => !QuotaManager.isPremium() && navigate('/premium')} className="flex items-center gap-1.5 cursor-pointer group">
+                    <span className={`text-[9px] font-bold uppercase tracking-widest ${energy < 20 ? 'text-red-400 animate-pulse' : 'text-neutral-500'}`}>
+                        {QuotaManager.isPremium() ? '∞' : `${energy}%`}
+                    </span>
+                    <div className={`w-6 h-3 rounded border ${energy < 20 ? 'border-red-500/50' : 'border-white/20'} p-0.5 relative`}>
+                        <div 
+                            className={`h-full rounded-[1px] transition-all duration-500 ${
+                                energy > 50 ? 'bg-emerald-400' : energy > 20 ? 'bg-amber-400' : 'bg-red-500'
+                            }`} 
+                            style={{ width: `${energy}%` }} 
+                        />
+                        <div className="absolute -right-[3px] top-[2px] h-1.5 w-[2px] bg-white/20 rounded-r-sm" />
+                    </div>
+                </div>
+
+                {/* Racha Minimalista */}
+                <div 
+                    onClick={() => navigate('/challenges')}
+                    className="liquid-glass px-4 py-2 rounded-full flex items-center gap-2 border border-orange-500/20 bg-orange-500/5 active:scale-95 transition-transform cursor-pointer shadow-[0_0_15px_rgba(249,115,22,0.2)]"
+                >
+                    <span className="material-symbols-outlined text-orange-500 text-xl icon-filled animate-pulse">local_fire_department</span>
+                    <span className="text-lg font-bold text-white tabular-nums leading-none pt-0.5">12</span>
+                </div>
             </div>
         </header>
 
-        {/* BLOQUE 2: ACCIÓN PRINCIPAL (Main CTA) */}
+        {/* BLOQUE 2: ACCIÓN PRINCIPAL (Contextual) */}
         <section className="mb-8">
             <button 
                 onClick={() => navigate('/tracker')}
@@ -216,8 +321,8 @@ const Dashboard: React.FC = () => {
                 
                 <div className="relative z-10 flex justify-between items-start w-full">
                     <div className="flex flex-col items-start space-y-2">
-                        <span className="px-2 py-0.5 rounded bg-black text-white text-[9px] font-bold uppercase tracking-widest">prioridad</span>
-                        <h2 className="text-2xl font-bold text-black tracking-tight leading-none lowercase">sincronizar<br/>mente</h2>
+                        <span className="px-2 py-0.5 rounded bg-black text-white text-[9px] font-bold uppercase tracking-widest">{t('dashboard.priority')}: {userGoal}</span>
+                        <h2 className="text-2xl font-bold text-black tracking-tight leading-none lowercase whitespace-pre-line">{t('dashboard.sync_mind')}</h2>
                     </div>
                     <div className="size-10 rounded-full bg-black flex items-center justify-center group-hover:rotate-45 transition-transform duration-500">
                         <span className="material-symbols-outlined text-white text-xl">arrow_outward</span>
@@ -226,7 +331,7 @@ const Dashboard: React.FC = () => {
                 
                 <div className="relative z-10 flex items-center gap-2 text-neutral-500">
                     <span className="material-symbols-outlined text-lg">radio_button_unchecked</span>
-                    <span className="text-xs font-medium tracking-wide lowercase">registro de estado pendiente</span>
+                    <span className="text-xs font-medium tracking-wide lowercase">{t('dashboard.pending')}</span>
                 </div>
             </button>
         </section>
@@ -246,17 +351,17 @@ const Dashboard: React.FC = () => {
                     </div>
                     
                     <h3 className="text-xl font-bold text-white tracking-tight mb-2 lowercase">
-                        reset sistema nervioso
+                        {t('dashboard.meditation_title')}
                     </h3>
                     <p className="text-sm text-neutral-300 font-medium leading-relaxed mb-6 max-w-[90%] lowercase">
-                        tu historial muestra picos de estrés. hackea tu nervio vago en 3 minutos.
+                        {t('dashboard.meditation_desc')}
                     </p>
 
                     <button 
                         onClick={() => navigate('/meditation')}
                         className="w-full py-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                     >
-                        <span className="text-xs font-bold text-white uppercase tracking-widest">calmar mente</span>
+                        <span className="text-xs font-bold text-white uppercase tracking-widest">{t('dashboard.meditation_btn')}</span>
                         <span className="material-symbols-outlined text-xs text-white">play_arrow</span>
                     </button>
                 </div>
@@ -276,25 +381,25 @@ const Dashboard: React.FC = () => {
                                 <span className="material-symbols-outlined text-amber-300 text-lg drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">
                                     volunteer_activism
                                 </span>
-                                <span className="text-[10px] font-bold text-amber-200 uppercase tracking-[0.2em]">pausa espiritual</span>
+                                <span className="text-[10px] font-bold text-amber-200 uppercase tracking-[0.2em]">{t('profile.lux_mode')}</span>
                              </div>
                              <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/30 rounded text-[9px] font-bold text-amber-100 uppercase tracking-widest">
-                                 modo lux
+                                 {t('profile.lux_mode')}
                              </span>
                         </div>
                         
                         <h3 className="text-xl font-bold text-white tracking-tight mb-2 lowercase">
-                            pausa de rendición
+                            {t('dashboard.prayer_title')}
                         </h3>
                         <p className="text-sm text-amber-100/70 font-medium leading-relaxed mb-6 max-w-[95%] lowercase">
-                            neuro-teología aplicada. suelta el control y descansa en la providencia.
+                            {t('dashboard.prayer_desc')}
                         </p>
 
                         <button 
                             onClick={() => navigate('/prayer')}
                             className="w-full py-3.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-[0_0_15px_rgba(245,158,11,0.1)]"
                         >
-                            <span className="text-xs font-bold text-white uppercase tracking-widest">iniciar oración</span>
+                            <span className="text-xs font-bold text-white uppercase tracking-widest">{t('dashboard.prayer_btn')}</span>
                             <span className="material-symbols-outlined text-xs text-white">spa</span>
                         </button>
                     </div>
@@ -302,34 +407,29 @@ const Dashboard: React.FC = () => {
             </section>
         )}
 
-        {/* BLOQUE 4: FRASE DEL DÍA (Ahora con fondo animado continuo) */}
+        {/* BLOQUE 4: FRASE DEL DÍA */}
         <section className="mb-6 animate-in slide-in-from-bottom-8 duration-700 delay-200">
              <div className="liquid-glass rounded-[2rem] p-1 overflow-hidden shadow-2xl group relative">
                 
-                {/* Continuous Moving Background Gradient */}
                 <div className={`absolute inset-0 animate-gradient-x pointer-events-none opacity-30 ${
                     isSpiritual 
                     ? 'bg-gradient-to-r from-amber-800/40 via-purple-900/40 to-amber-800/40' 
                     : 'bg-gradient-to-r from-indigo-900/40 via-neutral-900/40 to-indigo-900/40'
                 }`} />
                 
-                {/* Dark Overlay for Readability */}
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
 
-                {/* Decorative Blur Spot */}
                 <div className={`absolute -top-10 -left-10 size-40 rounded-full blur-[50px] pointer-events-none ${isSpiritual ? 'bg-amber-500/20' : 'bg-blue-900/30'}`} />
 
                 <div className="relative z-10 p-6 min-h-[140px] flex flex-col items-center justify-center text-center space-y-4 w-full">
-                    {/* Header */}
                     <div className="flex items-center gap-2 opacity-60">
                          <span className="h-px w-8 bg-gradient-to-r from-transparent to-white/50" />
                          <span className="text-[9px] font-bold text-white uppercase tracking-[0.3em]">
-                            {isSpiritual ? 'maná diario' : 'filosofía activa'}
+                            {isSpiritual ? t('dashboard.spiritual_label') : t('dashboard.quote_label')}
                          </span>
                          <span className="h-px w-8 bg-gradient-to-l from-transparent to-white/50" />
                     </div>
                     
-                    {/* Content */}
                     <div className={`transition-opacity duration-700 flex flex-col items-center gap-3 w-full ${loadingQuote ? 'opacity-0' : 'opacity-100'}`}>
                         {quote ? (
                             <>
@@ -357,6 +457,50 @@ const Dashboard: React.FC = () => {
         </section>
 
       </div>
+      
+      {/* --- DAILY MOMENT MODAL (KILLER FEATURE) --- */}
+      {showDailyMoment && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-500">
+              <div className="w-full max-w-sm relative">
+                  {/* Glow Effect */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/20 to-blue-500/20 blur-3xl rounded-full" />
+                  
+                  <div className="relative bg-neutral-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-500 flex flex-col items-center text-center">
+                      
+                      <div className="size-16 rounded-full bg-gradient-to-tr from-purple-500 to-blue-600 p-[1px] mb-6 shadow-[0_0_30px_rgba(124,58,237,0.4)]">
+                          <div className="size-full bg-black rounded-full flex items-center justify-center">
+                               <span className="material-symbols-outlined text-3xl text-white">auto_awesome</span>
+                          </div>
+                      </div>
+
+                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-[0.3em] mb-4">momento supra</span>
+                      
+                      <p className="text-xl font-medium text-white leading-relaxed mb-8 lowercase">
+                          "{dailyMomentText}"
+                      </p>
+
+                      <div className="flex gap-3 w-full">
+                          <button 
+                             onClick={handlePlayMoment}
+                             disabled={isPlayingMoment}
+                             className="size-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all text-white"
+                          >
+                              <span className={`material-symbols-outlined ${isPlayingMoment ? 'animate-pulse text-purple-400' : ''}`}>
+                                  {isPlayingMoment ? 'graphic_eq' : 'volume_up'}
+                              </span>
+                          </button>
+                          
+                          <button 
+                            onClick={() => setShowDailyMoment(false)}
+                            className="flex-1 h-14 bg-white text-black rounded-full font-bold uppercase tracking-widest text-xs flex items-center justify-center shadow-lg active:scale-95 transition-all"
+                          >
+                              integrar
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <BottomNav />
     </div>

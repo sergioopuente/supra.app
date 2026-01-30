@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleGenAI, Modality } from '@google/genai';
+import { QuotaManager } from '../utils/QuotaManager';
 
 // --- UTILITIES FOR GEMINI AUDIO DECODING ---
 function base64ToUint8Array(base64: string) {
@@ -36,7 +37,7 @@ async function pcmToAudioBuffer(
 const FULL_SCRIPT = `
 Hola hermano. Vamos a hacer una pausa de rendición. Sé que tu mente quiere resolverlo todo ahora mismo, pero tu cerebro necesita oxígeno, y tu alma necesita paz. Confía en mí por tres minutos.
 [PAUSA]
-Primero, vamos a regular tu biología. En la tradición antigua, al aliento se le llamaba Ruah, el espíritu de vida. No es solo aire, es presencia. Inhala profundo por la nariz en cuatro segundos... sostén el aire... y exhala lentamente en ocho. Al soltar el aire, imagina que sueltas el control. Inhala Ruah... exhala preocupación. Tu sistema nervioso está a salvo aquí.
+Primero, vamos a regular tu biología. En la tradición antigua, al aliento se le llamaba Ruah, el espíritu de vida. No es solo aire, es presencia. Inhala profundo por la nariz en cuatro segundos... siente el aire... y exhala lentamente en ocho. Al soltar el aire, imagina que sueltas el control. Inhala Ruah... exhala preocupación. Tu sistema nervioso está a salvo aquí.
 [PAUSA]
 Ahora, con la mente más clara, busca un pequeño destello de luz en tu día. No tiene que ser algo grande. Un café, un mensaje, un rayo de sol. Eso es la Providencia actuando en lo ordinario. Agradécelo. Dilo internamente: gracias por este detalle. Entrena a tu cerebro para ver la mano de Dios en el caos.
 [PAUSA]
@@ -94,6 +95,15 @@ const PrayerSession: React.FC = () => {
 
     // 2. Generate Neural Audio
     const generateVoice = async () => {
+        // CHECK QUOTA
+        // Fix: Use canAfford instead of canUse
+        if (!QuotaManager.canAfford('neural_tts')) {
+            console.log("Quota exceeded. Using browser TTS.");
+            setUseFallbackTTS(true);
+            setupFallbackTTS();
+            return;
+        }
+
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             // Soft pauses using ellipsis for natural flow
@@ -103,6 +113,9 @@ const PrayerSession: React.FC = () => {
             const timeoutPromise = new Promise((_, reject) => 
                 setTimeout(() => reject(new Error("Timeout: Audio generation took too long")), 45000)
             );
+
+            // CONSUME QUOTA
+            QuotaManager.consume('neural_tts');
 
             const apiPromise = ai.models.generateContent({
                 model: "gemini-2.5-flash-preview-tts",
@@ -140,14 +153,18 @@ const PrayerSession: React.FC = () => {
             console.warn("Using fallback TTS due to error or timeout:", error);
             // Fallback to browser TTS (Robotic Voice) - ONLY IF API FAILS
             setUseFallbackTTS(true);
-            const fallbackScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, ", , , ");
-            const u = new SpeechSynthesisUtterance(fallbackScript);
-            u.lang = 'es-ES';
-            u.rate = 0.9;
-            u.pitch = 0.8;
-            utteranceRef.current = u;
-            setIsLoadingVoice(false);
+            setupFallbackTTS();
         }
+    };
+
+    const setupFallbackTTS = () => {
+        const fallbackScript = FULL_SCRIPT.replace(/\[PAUSA\]/g, ", , , ");
+        const u = new SpeechSynthesisUtterance(fallbackScript);
+        u.lang = 'es-ES';
+        u.rate = 0.9;
+        u.pitch = 0.8;
+        utteranceRef.current = u;
+        setIsLoadingVoice(false);
     };
 
     generateVoice();
@@ -293,6 +310,7 @@ const PrayerSession: React.FC = () => {
         <div className="flex flex-col items-center">
              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em]">pausa de rendición</span>
              {isLoadingVoice && <span className="text-[8px] text-amber-500/60 font-bold animate-pulse mt-1">sincronizando voz humana...</span>}
+             {useFallbackTTS && !isLoadingVoice && <span className="text-[8px] text-neutral-500 font-bold mt-1">modo eco activo</span>}
         </div>
         <button onClick={toggleMute} className={`size-10 flex items-center justify-center transition-colors ${isMuted ? 'text-neutral-500' : 'text-amber-400'}`}>
             <span className="material-symbols-outlined">{isMuted ? 'volume_off' : 'volume_up'}</span>
